@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: newsnow-go
+    ports:
+      - '3000:3000'
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DATABASE_URL=postgres://newsnow:newsnow@db:5432/newsnow?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-here}
+      - G_CLIENT_ID=${G_CLIENT_ID}
+      - G_CLIENT_SECRET=${G_CLIENT_SECRET}
+      - INIT_TABLE=true
+      - ENABLE_CACHE=true
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - newsnow-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: newsnow-db
+    environment:
+      - POSTGRES_USER=newsnow
+      - POSTGRES_PASSWORD=newsnow
+      - POSTGRES_DB=newsnow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    restart: unless-stopped
+    networks:
+      - newsnow-network
+
+networks:
+  newsnow-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

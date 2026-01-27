@@ -1,0 +1,27 @@
+# NewsNow Go Server Configuration
+
+# Server Configuration
+host: 0.0.0.0
+port: 3000
+
+# Database Configuration
+database_url: postgres://newsnow:newsnow@localhost:5432/newsnow?sslmode=disable
+
+# JWT Configuration
+jwt_secret: your-jwt-secret-here
+
+# OAuth Configuration (optional)
+g_client_id: your-github-client-id
+g_client_secret: your-github-client-secret
+
+# Feature Flags
+init_table: true
+enable_cache: true
+base_url: http://localhost:3000
+
+# RSSHub Configuration (optional)
+producthunt_api_token: your-producthunt-token
+
+# Allowed Emails (optional, leave empty to allow all)
+# allowed_emails:
+#   - example@email.com
