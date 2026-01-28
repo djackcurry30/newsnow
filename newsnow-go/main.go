@@ -119,6 +119,13 @@ func main() {
 			pythonGroup.POST("/execute", pythonHandler.Execute)
 			pythonGroup.POST("/execute-with-globals", pythonHandler.ExecuteWithGlobals)
 			pythonGroup.POST("/execute-file", pythonHandler.ExecuteFile)
+
+			// 环境管理API
+			pythonGroup.GET("/environments", pythonHandler.ListEnvironments)
+			pythonGroup.GET("/environments/:id", pythonHandler.GetEnvironment)
+			pythonGroup.POST("/environments/cleanup", pythonHandler.CleanupEnvironment)
+			pythonGroup.POST("/environments/cleanup-all", pythonHandler.CleanupAllEnvironments)
+			pythonGroup.POST("/environments/cleanup-expired", pythonHandler.CleanupExpiredEnvironments)
 		}
 		defer pythonHandler.Cleanup()
 	}
