@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"newsnow-go/internal/config"
-	"newsnow-go/pkg/jwt"
 	"newsnow-go/internal/utils"
+	"newsnow-go/pkg/jwt"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,10 +18,10 @@ type UserContext struct {
 
 func Auth(cfg *config.Config) gin.HandlerFunc {
 	jwtService := jwt.New(cfg.JWTSecret)
-	
+
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
-		
+
 		if !strings.HasPrefix(path, "/api") {
 			c.Next()
 			return
@@ -47,7 +47,7 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 			if authHeader != "" {
 				tokenString := strings.TrimPrefix(authHeader, "Bearer")
 				tokenString = strings.TrimSpace(tokenString)
-				
+
 				claims, err := jwtService.VerifyToken(tokenString)
 				if err == nil && claims != nil {
 					c.Set("user", UserContext{
@@ -72,7 +72,7 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 				return
 			}
 		}
-		
+
 		c.Next()
 	}
 }
@@ -85,6 +85,7 @@ func isPublicAPI(path string) bool {
 		"/api/mcp",
 		"/api/enable-login",
 		"/api/version",
+		"/api/python",
 	}
 	for _, api := range publicAPIs {
 		if strings.HasPrefix(path, api) {
@@ -112,12 +113,12 @@ func CORS() gin.HandlerFunc {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		
+
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
-		
+
 		c.Next()
 	}
 }

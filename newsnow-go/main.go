@@ -109,6 +109,20 @@ func main() {
 		})
 	})
 
+	// Python execution API
+	pythonHandler, err := handler.NewPythonHandler()
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Python handler: %v", err)
+	} else {
+		pythonGroup := r.Group("/api/python")
+		{
+			pythonGroup.POST("/execute", pythonHandler.Execute)
+			pythonGroup.POST("/execute-with-globals", pythonHandler.ExecuteWithGlobals)
+			pythonGroup.POST("/execute-file", pythonHandler.ExecuteFile)
+		}
+		defer pythonHandler.Cleanup()
+	}
+
 	addr := cfg.GetServerAddr()
 	log.Printf("Starting server on %s", addr)
 
