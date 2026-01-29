@@ -1,0 +1,16 @@
+{
+  "extends": "plasmo/templates/tsconfig.base",
+  "include": [
+    ".plasmo/index.d.ts",
+    ".plasmo/**/*",
+    "./**/*.ts",
+    "./**/*.tsx"
+  ],
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "~/*": ["./*"]
+    },
+    "baseUrl": "."
+  }
+}
