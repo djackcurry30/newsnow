@@ -82,6 +82,7 @@ func isPublicAPI(path string) bool {
 		"/api/s",
 		"/api/proxy",
 		"/api/latest",
+		"/api/all",
 		"/api/mcp",
 		"/api/enable-login",
 		"/api/version",
