@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { Button } from "~/components/ui/button"
-import { cn } from "~/lib/utils"
 import { api } from "~/lib/api"
+import { cn } from "~/lib/utils"
 
 import "./globals.css"
 
@@ -78,22 +78,22 @@ function getSourceColor(source: string): string {
   const sourceKey = source.toLowerCase()
   const color = SOURCES[sourceKey]?.color || "gray"
   const colors: Record<string, string> = {
-    "slate": "bg-slate-500/15 text-slate-700 border-slate-300",
-    "blue": "bg-blue-500/15 text-blue-700 border-blue-300",
-    "red": "bg-red-500/15 text-red-700 border-red-300",
-    "purple": "bg-purple-500/15 text-purple-700 border-purple-300",
-    "sky": "bg-sky-500/15 text-sky-700 border-sky-300",
-    "green": "bg-green-500/15 text-green-700 border-green-300",
-    "orange": "bg-orange-500/15 text-orange-700 border-orange-300",
-    "gray": "bg-gray-500/15 text-gray-700 border-gray-300",
-    "pink": "bg-pink-500/15 text-pink-700 border-pink-300",
-    "cyan": "bg-cyan-500/15 text-cyan-700 border-cyan-300",
-    "yellow": "bg-yellow-500/15 text-yellow-700 border-yellow-300",
-    "indigo": "bg-indigo-500/15 text-indigo-700 border-indigo-300",
-    "teal": "bg-teal-500/15 text-teal-700 border-teal-300",
-    "black": "bg-gray-800/15 text-gray-800 border-gray-400",
+    slate: "bg-slate-500/15 text-slate-700 border-slate-300",
+    blue: "bg-blue-500/15 text-blue-700 border-blue-300",
+    red: "bg-red-500/15 text-red-700 border-red-300",
+    purple: "bg-purple-500/15 text-purple-700 border-purple-300",
+    sky: "bg-sky-500/15 text-sky-700 border-sky-300",
+    green: "bg-green-500/15 text-green-700 border-green-300",
+    orange: "bg-orange-500/15 text-orange-700 border-orange-300",
+    gray: "bg-gray-500/15 text-gray-700 border-gray-300",
+    pink: "bg-pink-500/15 text-pink-700 border-pink-300",
+    cyan: "bg-cyan-500/15 text-cyan-700 border-cyan-300",
+    yellow: "bg-yellow-500/15 text-yellow-700 border-yellow-300",
+    indigo: "bg-indigo-500/15 text-indigo-700 border-indigo-300",
+    teal: "bg-teal-500/15 text-teal-700 border-teal-300",
+    black: "bg-gray-800/15 text-gray-800 border-gray-400",
   }
-  return colors[color] || colors["gray"]
+  return colors[color] || colors.gray
 }
 
 function getSourceName(source: string): string {
@@ -101,10 +101,7 @@ function getSourceName(source: string): string {
   return SOURCES[sourceKey]?.name || source
 }
 
-function getSourceTitle(source: string): string {
-  const sourceKey = source.toLowerCase()
-  return SOURCES[sourceKey]?.title || ""
-}
+
 
 function formatTime(timeStr?: number | string): string {
   if (!timeStr) return ""
