@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,45 @@ var (
 	pythonPath string
 	once       sync.Once
 )
+
+// withRecovery 执行函数并捕获 panic
+func withRecovery(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+		}
+	}()
+	return fn()
+}
+
+// withRecoveryResult 执行函数并捕获 panic，带返回值
+func withRecoveryResult(fn func() (*ExecutionResult, error)) (result *ExecutionResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			result = &ExecutionResult{
+				Stdout: "",
+				Stderr: "",
+				Error:  err,
+			}
+		}
+	}()
+	return fn()
+}
+
+// withRecoveryEnv 执行函数并捕获 panic，返回 VirtualEnv
+func withRecoveryEnv(fn func() (*VirtualEnv, error)) (env *VirtualEnv, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			env = nil
+		}
+	}()
+	return fn()
+}
 
 // getPythonPath 获取 Python 可执行文件路径
 func getPythonPath() string {
@@ -146,93 +187,123 @@ func (e *PythonExecutor) SetWorkingDir(dir string) {
 
 // autoCleanupLoop 自动清理循环
 func (e *PythonExecutor) autoCleanupLoop() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in autoCleanupLoop] %v\nStack: %s", r, string(debug.Stack()))
+			// 重启清理循环
+			go e.autoCleanupLoop()
+		}
+	}()
+
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		e.CleanupExpiredEnvironments()
+		if err := e.CleanupExpiredEnvironments(); err != nil {
+			log.Printf("Error in cleanup expired environments: %v", err)
+		}
 	}
 }
 
 // CleanupExpiredEnvironments 清理过期的虚拟环境
 func (e *PythonExecutor) CleanupExpiredEnvironments() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	return withRecovery(func() error {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 
-	var toDelete []string
-	for id, env := range e.environments {
-		if env.IsExpired() {
-			toDelete = append(toDelete, id)
-		}
-	}
-
-	for _, id := range toDelete {
-		env := e.environments[id]
-		delete(e.environments, id)
-
-		// 异步删除目录
-		go func(path string) {
-			if err := os.RemoveAll(path); err != nil {
-				fmt.Printf("Failed to cleanup environment at %s: %v\n", path, err)
+		var toDelete []string
+		for id, env := range e.environments {
+			if env.IsExpired() {
+				toDelete = append(toDelete, id)
 			}
-		}(env.Path)
-	}
+		}
 
-	return nil
+		for _, id := range toDelete {
+			env := e.environments[id]
+			delete(e.environments, id)
+
+			// 异步删除目录（带 panic 恢复）
+			go func(path string) {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[PANIC RECOVERED in cleanup goroutine] %v", r)
+					}
+				}()
+				if err := os.RemoveAll(path); err != nil {
+					log.Printf("Failed to cleanup environment at %s: %v\n", path, err)
+				}
+			}(env.Path)
+		}
+
+		return nil
+	})
 }
 
 // CleanupEnvironment 手动清理指定虚拟环境
 func (e *PythonExecutor) CleanupEnvironment(envID string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	return withRecovery(func() error {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 
-	env, exists := e.environments[envID]
-	if !exists {
-		return fmt.Errorf("environment %s not found", envID)
-	}
+		env, exists := e.environments[envID]
+		if !exists {
+			return fmt.Errorf("environment %s not found", envID)
+		}
 
-	delete(e.environments, envID)
+		delete(e.environments, envID)
 
-	// 删除虚拟环境目录
-	if err := os.RemoveAll(env.Path); err != nil {
-		return fmt.Errorf("failed to cleanup environment: %w", err)
-	}
+		// 删除虚拟环境目录
+		if err := os.RemoveAll(env.Path); err != nil {
+			return fmt.Errorf("failed to cleanup environment: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // CleanupAllEnvironments 清理所有虚拟环境
 func (e *PythonExecutor) CleanupAllEnvironments() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	return withRecovery(func() error {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 
-	var lastErr error
-	for id, env := range e.environments {
-		delete(e.environments, id)
-		if err := os.RemoveAll(env.Path); err != nil {
-			lastErr = err
-			fmt.Printf("Failed to cleanup environment %s: %v\n", id, err)
+		var lastErr error
+		for id, env := range e.environments {
+			delete(e.environments, id)
+			if err := os.RemoveAll(env.Path); err != nil {
+				lastErr = err
+				log.Printf("Failed to cleanup environment %s: %v\n", id, err)
+			}
 		}
-	}
 
-	return lastErr
+		return lastErr
+	})
 }
 
 // GetEnvironment 获取虚拟环境信息
 func (e *PythonExecutor) GetEnvironment(envID string) (*VirtualEnv, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	return withRecoveryEnv(func() (*VirtualEnv, error) {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
 
-	env, exists := e.environments[envID]
-	if !exists {
-		return nil, fmt.Errorf("environment %s not found", envID)
-	}
+		env, exists := e.environments[envID]
+		if !exists {
+			return nil, fmt.Errorf("environment %s not found", envID)
+		}
 
-	return env, nil
+		return env, nil
+	})
 }
 
 // ListEnvironments 列出所有虚拟环境
-func (e *PythonExecutor) ListEnvironments() []*VirtualEnv {
+func (e *PythonExecutor) ListEnvironments() (result []*VirtualEnv) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in ListEnvironments] %v", r)
+			result = []*VirtualEnv{}
+		}
+	}()
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -391,6 +462,13 @@ func (e *PythonExecutor) generateEnvID() string {
 
 // ExecuteWithOptions 使用选项执行 Python 代码（支持虚拟环境和依赖安装）
 func (e *PythonExecutor) ExecuteWithOptions(opts ExecutionOptions) (*ExecutionResult, error) {
+	return withRecoveryResult(func() (*ExecutionResult, error) {
+		return e.executeWithOptionsInternal(opts)
+	})
+}
+
+// executeWithOptionsInternal 内部实现，不处理 panic
+func (e *PythonExecutor) executeWithOptionsInternal(opts ExecutionOptions) (*ExecutionResult, error) {
 	timeout := e.timeout
 	if opts.Timeout > 0 {
 		timeout = opts.Timeout
@@ -573,7 +651,16 @@ func (e *PythonExecutor) ExecuteWithOptions(opts ExecutionOptions) (*ExecutionRe
 }
 
 // Execute 执行 Python 代码字符串（向后兼容）
-func (e *PythonExecutor) Execute(code string) (string, string, error) {
+func (e *PythonExecutor) Execute(code string) (stdout, stderr string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in Execute] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			stdout = ""
+			stderr = ""
+		}
+	}()
+
 	result, err := e.ExecuteWithOptions(ExecutionOptions{
 		Code: code,
 	})
@@ -584,7 +671,16 @@ func (e *PythonExecutor) Execute(code string) (string, string, error) {
 }
 
 // ExecuteWithInput 执行 Python 代码并传递输入数据
-func (e *PythonExecutor) ExecuteWithInput(code string, input string) (string, string, error) {
+func (e *PythonExecutor) ExecuteWithInput(code string, input string) (stdout, stderr string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in ExecuteWithInput] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			stdout = ""
+			stderr = ""
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), e.timeout)
 	defer cancel()
 
@@ -599,48 +695,63 @@ func (e *PythonExecutor) ExecuteWithInput(code string, input string) (string, st
 		cmd.Stdin = strings.NewReader(input)
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return stdout.String(), stderr.String(), fmt.Errorf("execution timeout")
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("execution timeout")
+		}
+		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("execution failed: %w", err)
 	}
 
-	if err != nil {
-		return stdout.String(), stderr.String(), fmt.Errorf("execution failed: %w", err)
-	}
-
-	return stdout.String(), stderr.String(), nil
+	return stdoutBuf.String(), stderrBuf.String(), nil
 }
 
 // ExecuteWithGlobals 执行 Python 代码并传递全局变量（向后兼容）
-func (e *PythonExecutor) ExecuteWithGlobals(code string, globals map[string]interface{}) (interface{}, error) {
-	result, err := e.ExecuteWithOptions(ExecutionOptions{
+func (e *PythonExecutor) ExecuteWithGlobals(code string, globals map[string]interface{}) (result interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in ExecuteWithGlobals] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			result = nil
+		}
+	}()
+
+	execResult, err := e.ExecuteWithOptions(ExecutionOptions{
 		Code:    code,
 		Globals: globals,
 	})
 	if err != nil {
 		return nil, err
 	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("execution failed: %w, stderr: %s", result.Error, result.Stderr)
+	if execResult.Error != nil {
+		return nil, fmt.Errorf("execution failed: %w, stderr: %s", execResult.Error, execResult.Stderr)
 	}
 
 	// 尝试解析结果
 	var jsonResult map[string]interface{}
-	if err := json.Unmarshal([]byte(result.Stdout), &jsonResult); err == nil {
+	if err := json.Unmarshal([]byte(execResult.Stdout), &jsonResult); err == nil {
 		if res, ok := jsonResult["result"]; ok {
 			return res, nil
 		}
 	}
 
-	return strings.TrimSpace(result.Stdout), nil
+	return strings.TrimSpace(execResult.Stdout), nil
 }
 
 // ExecuteFile 执行 Python 文件（向后兼容）
-func (e *PythonExecutor) ExecuteFile(filepath string) (string, string, error) {
+func (e *PythonExecutor) ExecuteFile(filepath string) (stdout, stderr string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in ExecuteFile] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			stdout = ""
+			stderr = ""
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), e.timeout)
 	defer cancel()
 
@@ -650,24 +761,31 @@ func (e *PythonExecutor) ExecuteFile(filepath string) (string, string, error) {
 		cmd.Dir = e.workingDir
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return stdout.String(), stderr.String(), fmt.Errorf("execution timeout")
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("execution timeout")
+		}
+		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("execution failed: %w", err)
 	}
 
-	if err != nil {
-		return stdout.String(), stderr.String(), fmt.Errorf("execution failed: %w", err)
-	}
-
-	return stdout.String(), stderr.String(), nil
+	return stdoutBuf.String(), stderrBuf.String(), nil
 }
 
 // ExecuteScript 执行 Python 脚本（从字符串，向后兼容）
-func (e *PythonExecutor) ExecuteScript(script string, args ...string) (string, string, error) {
+func (e *PythonExecutor) ExecuteScript(script string, args ...string) (stdout, stderr string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in ExecuteScript] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			stdout = ""
+			stderr = ""
+		}
+	}()
+
 	// 创建临时文件
 	tmpFile, err := os.CreateTemp("", "python_script_*.py")
 	if err != nil {
@@ -687,7 +805,16 @@ func (e *PythonExecutor) ExecuteScript(script string, args ...string) (string, s
 }
 
 // ExecuteFileWithArgs 执行 Python 文件并传递参数
-func (e *PythonExecutor) ExecuteFileWithArgs(filepath string, args ...string) (string, string, error) {
+func (e *PythonExecutor) ExecuteFileWithArgs(filepath string, args ...string) (stdout, stderr string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in ExecuteFileWithArgs] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			stdout = ""
+			stderr = ""
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), e.timeout)
 	defer cancel()
 
@@ -698,24 +825,31 @@ func (e *PythonExecutor) ExecuteFileWithArgs(filepath string, args ...string) (s
 		cmd.Dir = e.workingDir
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return stdout.String(), stderr.String(), fmt.Errorf("execution timeout")
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("execution timeout")
+		}
+		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("execution failed: %w", err)
 	}
 
-	if err != nil {
-		return stdout.String(), stderr.String(), fmt.Errorf("execution failed: %w", err)
-	}
-
-	return stdout.String(), stderr.String(), nil
+	return stdoutBuf.String(), stderrBuf.String(), nil
 }
 
 // InstallPackage 安装 Python 包（向后兼容，安装到系统环境）
-func (e *PythonExecutor) InstallPackage(packageName string) (string, string, error) {
+func (e *PythonExecutor) InstallPackage(packageName string) (stdout, stderr string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in InstallPackage] %v\nStack: %s", r, string(debug.Stack()))
+			err = fmt.Errorf("internal error: %v", r)
+			stdout = ""
+			stderr = ""
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -725,28 +859,37 @@ func (e *PythonExecutor) InstallPackage(packageName string) (string, string, err
 		cmd.Dir = e.workingDir
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return stdout.String(), stderr.String(), fmt.Errorf("installation timeout")
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("installation timeout")
+		}
+		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("installation failed: %w", err)
 	}
 
-	if err != nil {
-		return stdout.String(), stderr.String(), fmt.Errorf("installation failed: %w", err)
-	}
-
-	return stdout.String(), stderr.String(), nil
+	return stdoutBuf.String(), stderrBuf.String(), nil
 }
 
 // Cleanup 清理资源
-func (e *PythonExecutor) Cleanup() {
-	e.CleanupAllEnvironments()
+func (e *PythonExecutor) Cleanup() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in Cleanup] %v", r)
+			err = fmt.Errorf("internal error during cleanup: %v", r)
+		}
+	}()
+	return e.CleanupAllEnvironments()
 }
 
 // Cleanup 全局清理函数
 func Cleanup() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in global Cleanup] %v", r)
+		}
+	}()
 	// 全局清理
 }

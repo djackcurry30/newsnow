@@ -2,13 +2,29 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"newsnow-go/internal/python"
 
 	"github.com/gin-gonic/gin"
 )
+
+// withRecovery 包装 handler 函数，捕获 panic
+func withRecovery(c *gin.Context, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC RECOVERED in handler] %v\nStack: %s", r, string(debug.Stack()))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "internal server error",
+			})
+		}
+	}()
+	fn()
+}
 
 // ExecutePythonRequest 执行Python请求
 type ExecutePythonRequest struct {
@@ -86,6 +102,13 @@ func NewPythonHandler() (*PythonHandler, error) {
 
 // Execute 执行 Python 代码字符串（支持虚拟环境和依赖安装）
 func (h *PythonHandler) Execute(c *gin.Context) {
+	withRecovery(c, func() {
+		h.executeInternal(c)
+	})
+}
+
+// executeInternal 内部执行逻辑
+func (h *PythonHandler) executeInternal(c *gin.Context) {
 	var req ExecutePythonRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ExecutePythonResponse{
@@ -152,6 +175,13 @@ func (h *PythonHandler) Execute(c *gin.Context) {
 
 // ExecuteWithGlobals 执行 Python 代码并传递全局变量
 func (h *PythonHandler) ExecuteWithGlobals(c *gin.Context) {
+	withRecovery(c, func() {
+		h.executeWithGlobalsInternal(c)
+	})
+}
+
+// executeWithGlobalsInternal 内部执行逻辑
+func (h *PythonHandler) executeWithGlobalsInternal(c *gin.Context) {
 	var req ExecutePythonRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ExecutePythonResponse{
@@ -235,149 +265,161 @@ func (h *PythonHandler) ExecuteWithGlobals(c *gin.Context) {
 
 // ExecuteFile 执行 Python 文件
 func (h *PythonHandler) ExecuteFile(c *gin.Context) {
-	var req ExecutePythonFileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ExecutePythonResponse{
-			Success: false,
-			Error:   "Invalid request: " + err.Error(),
-		})
-		return
-	}
+	withRecovery(c, func() {
+		var req ExecutePythonFileRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ExecutePythonResponse{
+				Success: false,
+				Error:   "Invalid request: " + err.Error(),
+			})
+			return
+		}
 
-	stdout, stderr, err := h.executor.ExecuteFile(req.Filepath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ExecutePythonResponse{
-			Success: false,
+		stdout, stderr, err := h.executor.ExecuteFile(req.Filepath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ExecutePythonResponse{
+				Success: false,
+				Stdout:  stdout,
+				Stderr:  stderr,
+				Error:   err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, ExecutePythonResponse{
+			Success: true,
 			Stdout:  stdout,
 			Stderr:  stderr,
-			Error:   err.Error(),
 		})
-		return
-	}
-
-	c.JSON(http.StatusOK, ExecutePythonResponse{
-		Success: true,
-		Stdout:  stdout,
-		Stderr:  stderr,
 	})
 }
 
 // ListEnvironments 列出所有虚拟环境
 func (h *PythonHandler) ListEnvironments(c *gin.Context) {
-	envs := h.executor.ListEnvironments()
+	withRecovery(c, func() {
+		envs := h.executor.ListEnvironments()
 
-	var responseEnvs []EnvironmentResponse
-	for _, env := range envs {
-		responseEnvs = append(responseEnvs, EnvironmentResponse{
-			ID:               env.ID,
-			Path:             env.Path,
-			WorkingDir:       env.WorkingDir,
-			Requirements:     env.Requirements,
-			RequirementsFile: env.RequirementsFile,
-			CreatedAt:        env.CreatedAt,
-			LastUsedAt:       env.LastUsedAt,
-			CleanupPolicy:    env.CleanupPolicy,
-			TTL:              env.TTL,
+		var responseEnvs []EnvironmentResponse
+		for _, env := range envs {
+			responseEnvs = append(responseEnvs, EnvironmentResponse{
+				ID:               env.ID,
+				Path:             env.Path,
+				WorkingDir:       env.WorkingDir,
+				Requirements:     env.Requirements,
+				RequirementsFile: env.RequirementsFile,
+				CreatedAt:        env.CreatedAt,
+				LastUsedAt:       env.LastUsedAt,
+				CleanupPolicy:    env.CleanupPolicy,
+				TTL:              env.TTL,
+			})
+		}
+
+		c.JSON(http.StatusOK, ListEnvironmentsResponse{
+			Success:      true,
+			Environments: responseEnvs,
+			Count:        len(responseEnvs),
 		})
-	}
-
-	c.JSON(http.StatusOK, ListEnvironmentsResponse{
-		Success:      true,
-		Environments: responseEnvs,
-		Count:        len(responseEnvs),
 	})
 }
 
 // GetEnvironment 获取指定虚拟环境信息
 func (h *PythonHandler) GetEnvironment(c *gin.Context) {
-	envID := c.Param("id")
-	if envID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "environment id is required",
-		})
-		return
-	}
+	withRecovery(c, func() {
+		envID := c.Param("id")
+		if envID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "environment id is required",
+			})
+			return
+		}
 
-	env, err := h.executor.GetEnvironment(envID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
+		env, err := h.executor.GetEnvironment(envID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"environment": EnvironmentResponse{
-			ID:               env.ID,
-			Path:             env.Path,
-			WorkingDir:       env.WorkingDir,
-			Requirements:     env.Requirements,
-			RequirementsFile: env.RequirementsFile,
-			CreatedAt:        env.CreatedAt,
-			LastUsedAt:       env.LastUsedAt,
-			CleanupPolicy:    env.CleanupPolicy,
-			TTL:              env.TTL,
-		},
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"environment": EnvironmentResponse{
+				ID:               env.ID,
+				Path:             env.Path,
+				WorkingDir:       env.WorkingDir,
+				Requirements:     env.Requirements,
+				RequirementsFile: env.RequirementsFile,
+				CreatedAt:        env.CreatedAt,
+				LastUsedAt:       env.LastUsedAt,
+				CleanupPolicy:    env.CleanupPolicy,
+				TTL:              env.TTL,
+			},
+		})
 	})
 }
 
 // CleanupEnvironment 手动清理指定虚拟环境
 func (h *PythonHandler) CleanupEnvironment(c *gin.Context) {
-	var req CleanupEnvironmentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "Invalid request: " + err.Error(),
-		})
-		return
-	}
+	withRecovery(c, func() {
+		var req CleanupEnvironmentRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "Invalid request: " + err.Error(),
+			})
+			return
+		}
 
-	if err := h.executor.CleanupEnvironment(req.EnvID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
+		if err := h.executor.CleanupEnvironment(req.EnvID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "environment " + req.EnvID + " cleaned up successfully",
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "environment " + req.EnvID + " cleaned up successfully",
+		})
 	})
 }
 
 // CleanupAllEnvironments 清理所有虚拟环境
 func (h *PythonHandler) CleanupAllEnvironments(c *gin.Context) {
-	if err := h.executor.CleanupAllEnvironments(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
+	withRecovery(c, func() {
+		if err := h.executor.CleanupAllEnvironments(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "all environments cleaned up successfully",
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "all environments cleaned up successfully",
+		})
 	})
 }
 
 // CleanupExpiredEnvironments 清理过期虚拟环境
 func (h *PythonHandler) CleanupExpiredEnvironments(c *gin.Context) {
-	if err := h.executor.CleanupExpiredEnvironments(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
+	withRecovery(c, func() {
+		if err := h.executor.CleanupExpiredEnvironments(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "expired environments cleaned up successfully",
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "expired environments cleaned up successfully",
+		})
 	})
 }
 
