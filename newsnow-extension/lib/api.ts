@@ -5,7 +5,7 @@ const STORAGE_KEYS = {
 } as const
 
 class ApiClient {
-  private baseURL: string = 'http://localhost:8080'
+  private baseURL: string = 'http://localhost:3000'
   private token: string | null = null
 
   async init() {
@@ -13,7 +13,7 @@ class ApiClient {
       STORAGE_KEYS.API_URL,
       STORAGE_KEYS.TOKEN
     ])
-    this.baseURL = result[STORAGE_KEYS.API_URL] || 'http://localhost:8080'
+    this.baseURL = result[STORAGE_KEYS.API_URL] || 'http://localhost:3000'
     this.token = result[STORAGE_KEYS.TOKEN] || null
     console.log('API initialized:', { baseURL: this.baseURL, hasToken: !!this.token })
   }
