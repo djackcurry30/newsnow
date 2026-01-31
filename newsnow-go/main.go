@@ -75,6 +75,7 @@ func main() {
 	loginHandler := handler.NewLoginHandler(cfg, jwtService, userService)
 	oauthHandler := handler.NewOAuthHandler(cfg, jwtService, userService)
 	meHandler := handler.NewMeHandler(cfg, jwtService, userService)
+	syncHandler := handler.NewSyncHandler(cfg, userService)
 
 	r.GET("/api/latest/:id", latestHandler.Handle)
 	r.GET("/api/all", allHandler.Handle)
@@ -85,6 +86,8 @@ func main() {
 	authGroup.POST("/login", loginHandler.Handle)
 	authGroup.GET("/oauth/:provider", oauthHandler.Handle)
 	authGroup.GET("/me", meHandler.Handle)
+	authGroup.GET("/me/sync", syncHandler.Handle)
+	authGroup.POST("/me/sync", syncHandler.Handle)
 
 	r.GET("/api/mcp", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

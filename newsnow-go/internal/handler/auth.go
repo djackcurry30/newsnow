@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -122,28 +123,44 @@ func NewOAuthHandler(cfg *config.Config, jwtService *jwtsvc.JWT, userService *se
 
 func (h *OAuthHandler) Handle(c *gin.Context) {
 	provider := c.Param("provider")
-	
+
 	if provider != "github" && provider != "google" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid provider"})
+		return
+	}
+
+	// Check if provider is configured
+	if provider == "github" && !h.cfg.IsGitHubOAuthEnabled() {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "GitHub OAuth not configured"})
+		return
+	}
+	if provider == "google" && !h.cfg.IsGoogleOAuthEnabled() {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Google OAuth not configured"})
 		return
 	}
 
 	code := c.Query("code")
 	if code == "" {
 		state := c.Query("state")
-		redirectURL := h.cfg.BaseURL + "/api/oauth/" + provider
-		if state != "" {
-			redirectURL += "?state=" + url.QueryEscape(state)
-		}
-		redirectURL += "&response_type=code&client_id=" + h.cfg.GClientID + "&redirect_uri=" + url.QueryEscape(redirectURL)
-		
+		var authURL string
+
 		if provider == "github" {
-			redirectURL += "&scope=read:user"
+			redirectURI := h.cfg.BaseURL + "/api/oauth/github"
+			authURL = fmt.Sprintf("https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=read:user",
+				h.cfg.GClientID, url.QueryEscape(redirectURI))
+			if state != "" {
+				authURL += "&state=" + url.QueryEscape(state)
+			}
 		} else {
-			redirectURL += "&scope=openid%20profile%20email"
+			redirectURI := h.cfg.BaseURL + "/api/oauth/google"
+			authURL = fmt.Sprintf("https://accounts.google.com/o/oauth2/v2/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid profile email",
+				h.cfg.GoogleClientID, url.QueryEscape(redirectURI))
+			if state != "" {
+				authURL += "&state=" + url.QueryEscape(state)
+			}
 		}
-		
-		c.Redirect(http.StatusFound, redirectURL)
+
+		c.Redirect(http.StatusFound, authURL)
 		return
 	}
 
@@ -180,15 +197,15 @@ func (h *OAuthHandler) Handle(c *gin.Context) {
 
 func (h *OAuthHandler) exchangeCode(provider, code string) (map[string]string, error) {
 	var tokenURL, clientID, clientSecret string
-	
+
 	if provider == "github" {
 		tokenURL = "https://github.com/login/oauth/access_token"
 		clientID = h.cfg.GClientID
 		clientSecret = h.cfg.GClientSecret
 	} else {
 		tokenURL = "https://oauth2.googleapis.com/token"
-		clientID = h.cfg.GClientID
-		clientSecret = h.cfg.GClientSecret
+		clientID = h.cfg.GoogleClientID
+		clientSecret = h.cfg.GoogleClientSecret
 	}
 
 	data := url.Values{}

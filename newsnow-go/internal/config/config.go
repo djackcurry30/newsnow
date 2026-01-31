@@ -9,17 +9,19 @@ import (
 )
 
 type Config struct {
-	Host             string   `mapstructure:"HOST"`
-	Port             int      `mapstructure:"PORT"`
-	DatabaseURL      string   `mapstructure:"DATABASE_URL"`
-	GClientID        string   `mapstructure:"G_CLIENT_ID"`
-	GClientSecret    string   `mapstructure:"G_CLIENT_SECRET"`
-	JWTSecret        string   `mapstructure:"JWT_SECRET"`
-	InitTable        bool     `mapstructure:"INIT_TABLE"`
-	EnableCache      bool     `mapstructure:"ENABLE_CACHE"`
-	BaseURL          string   `mapstructure:"BASE_URL"`
-	ProductHuntToken string   `mapstructure:"PRODUCTHUNT_API_TOKEN"`
-	AllowedEmails    []string `mapstructure:"ALLOWED_EMAILS"`
+	Host               string   `mapstructure:"HOST"`
+	Port               int      `mapstructure:"PORT"`
+	DatabaseURL        string   `mapstructure:"DATABASE_URL"`
+	GClientID          string   `mapstructure:"G_CLIENT_ID"`
+	GClientSecret      string   `mapstructure:"G_CLIENT_SECRET"`
+	GoogleClientID     string   `mapstructure:"GOOGLE_CLIENT_ID"`
+	GoogleClientSecret string   `mapstructure:"GOOGLE_CLIENT_SECRET"`
+	JWTSecret          string   `mapstructure:"JWT_SECRET"`
+	InitTable          bool     `mapstructure:"INIT_TABLE"`
+	EnableCache        bool     `mapstructure:"ENABLE_CACHE"`
+	BaseURL            string   `mapstructure:"BASE_URL"`
+	ProductHuntToken   string   `mapstructure:"PRODUCTHUNT_API_TOKEN"`
+	AllowedEmails      []string `mapstructure:"ALLOWED_EMAILS"`
 }
 
 func Load() (*Config, error) {
@@ -61,6 +63,12 @@ func Load() (*Config, error) {
 	if clientSecret := os.Getenv("G_CLIENT_SECRET"); clientSecret != "" {
 		cfg.GClientSecret = clientSecret
 	}
+	if googleClientID := os.Getenv("GOOGLE_CLIENT_ID"); googleClientID != "" {
+		cfg.GoogleClientID = googleClientID
+	}
+	if googleClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET"); googleClientSecret != "" {
+		cfg.GoogleClientSecret = googleClientSecret
+	}
 	if initTable := os.Getenv("INIT_TABLE"); initTable != "" {
 		cfg.InitTable = initTable == "true"
 	}
@@ -84,7 +92,17 @@ func (c *Config) GetDSN() string {
 }
 
 func (c *Config) IsLoginEnabled() bool {
-	return c.GClientID != "" && c.GClientSecret != "" && c.JWTSecret != ""
+	hasGitHubOAuth := c.GClientID != "" && c.GClientSecret != ""
+	hasGoogleOAuth := c.GoogleClientID != "" && c.GoogleClientSecret != ""
+	return (hasGitHubOAuth || hasGoogleOAuth) && c.JWTSecret != ""
+}
+
+func (c *Config) IsGitHubOAuthEnabled() bool {
+	return c.GClientID != "" && c.GClientSecret != ""
+}
+
+func (c *Config) IsGoogleOAuthEnabled() bool {
+	return c.GoogleClientID != "" && c.GoogleClientSecret != ""
 }
 
 func (c *Config) GetServerAddr() string {

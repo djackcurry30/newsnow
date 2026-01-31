@@ -11,8 +11,13 @@ database_url: postgres://newsnow:newsnow@localhost:5432/newsnow?sslmode=disable
 jwt_secret: your-jwt-secret-here
 
 # OAuth Configuration (optional)
+# GitHub OAuth
 g_client_id: your-github-client-id
 g_client_secret: your-github-client-secret
+
+# Google OAuth (optional)
+google_client_id: your-google-client-id
+google_client_secret: your-google-client-secret
 
 # Feature Flags
 init_table: true
