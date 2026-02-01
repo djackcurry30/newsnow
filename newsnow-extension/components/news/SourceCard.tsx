@@ -2,8 +2,64 @@ import { cn } from "~/lib/utils"
 import { EmptyState } from "./EmptyState"
 import { NewsItem } from "./NewsItem"
 import { getSourceColor, getSourceName, formatTime } from "../utils"
-import { SOURCES } from "../constants"
-import type { SourceResponse } from "../types"
+import { SOURCES, SOURCE_COLORS } from "../constants"
+import type { SourceResponse, SourceMetadata } from "../types"
+import { useState } from "react"
+
+// Source icon component with image fallback to letter
+function SourceIcon({ sourceId, sourceInfo }: { sourceId: string; sourceInfo?: SourceMetadata }) {
+  const [imgError, setImgError] = useState(false)
+  const baseSourceId = sourceId.split("-")[0]
+  const iconUrl = `/icons/${baseSourceId}.png`
+
+  // Get color for background
+  const colorKey = sourceInfo?.color || "gray"
+  const colorClass = SOURCE_COLORS[colorKey] || SOURCE_COLORS.gray
+
+  // Extract color from tailwind class for background
+  const bgColors: Record<string, string> = {
+    slate: "#64748b",
+    blue: "#3b82f6",
+    red: "#ef4444",
+    purple: "#a855f7",
+    sky: "#0ea5e9",
+    green: "#22c55e",
+    orange: "#f97316",
+    gray: "#6b7280",
+    pink: "#ec4899",
+    cyan: "#06b6d4",
+    yellow: "#eab308",
+    indigo: "#6366f1",
+    teal: "#14b8a6",
+    black: "#1f2937",
+  }
+  const bgColor = bgColors[colorKey] || bgColors.gray
+
+  // Get first letter of source name
+  const letter = (sourceInfo?.name || sourceId).charAt(0).toUpperCase()
+
+  if (imgError) {
+    return (
+      <div
+        className={cn("w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold", colorClass)}
+        style={{ backgroundColor: bgColor }}
+        title={sourceInfo?.name || sourceId}
+      >
+        {letter}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={iconUrl}
+      alt={sourceInfo?.name || sourceId}
+      className="w-7 h-7 rounded-full object-cover"
+      onError={() => setImgError(true)}
+      style={{ backgroundColor: "#f3f4f6" }}
+    />
+  )
+}
 
 interface SourceCardProps {
   sourceId: string
@@ -27,13 +83,7 @@ export function SourceCard({
       {/* Source Header */}
       <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div
-            className="w-7 h-7 rounded-full bg-cover bg-center"
-            style={{
-              backgroundImage: `url(/icons/${sourceId.split("-")[0]}.png)`,
-              backgroundColor: "#f3f4f6",
-            }}
-          />
+          <SourceIcon sourceId={sourceId} sourceInfo={sourceInfo} />
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-semibold text-gray-800">

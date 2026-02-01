@@ -99,3 +99,23 @@ textarea:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
+
+/* Window drag styles for independent popup window */
+.window-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.window-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Ensure popup window fills the viewport */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}

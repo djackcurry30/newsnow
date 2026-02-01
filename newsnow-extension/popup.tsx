@@ -1,104 +1,38 @@
-import { useCallback, useEffect, useState } from "react"
+// This file is used to trigger opening the independent window
+// It immediately closes the popup and opens the window
 
-import { api } from "~/lib/api"
+import { useEffect } from "react"
 
-import { Header } from "./components/layout/Header"
-import { Footer } from "./components/layout/Footer"
-import { ErrorBanner } from "./components/layout/ErrorBanner"
-import { ContentArea } from "./components/layout/ContentArea"
-
-import { COLUMNS } from "./components/constants"
-import type { SourceResponse } from "./components/types"
-import { getSourceName } from "./components/utils"
-
-import "./globals.css"
-
-function IndexPopup() {
-  const [activeColumn, setActiveColumn] = useState("focus")
-  const [sourceData, setSourceData] = useState<Record<string, SourceResponse>>({})
-  const [loading, setLoading] = useState<Record<string, boolean>>({})
-  const [error, setError] = useState("")
-
-  // Initialize API client
+function PopupTrigger() {
   useEffect(() => {
-    api.init()
+    // Open independent window
+    chrome.windows.create({
+      url: chrome.runtime.getURL("tabs/window.html"),
+      type: "popup",
+      width: 620,
+      height: 540,
+      left: Math.round((window.screen.width - 620) / 2),
+      top: Math.round((window.screen.height - 540) / 2),
+      focused: true
+    })
+
+    // Close this popup
+    window.close()
   }, [])
-
-  // Load news for a specific source
-  const loadSource = useCallback(async (sourceId: string) => {
-    setLoading((prev) => ({ ...prev, [sourceId]: true }))
-    setError("")
-
-    try {
-      const data = await api.request<SourceResponse>(`/api/s/${sourceId}`)
-      setSourceData((prev) => ({ ...prev, [sourceId]: data }))
-    } catch (err: any) {
-      console.error(`Failed to load ${sourceId}:`, err)
-      setError(`加载 ${getSourceName(sourceId)} 失败`)
-    } finally {
-      setLoading((prev) => ({ ...prev, [sourceId]: false }))
-    }
-  }, [])
-
-  // Load all sources in active column
-  const loadColumnNews = useCallback(
-    async (columnId: string) => {
-      const column = COLUMNS.find((c) => c.id === columnId)
-      if (!column) return
-
-      // Load each source in parallel
-      await Promise.all(column.sources.map((sourceId) => loadSource(sourceId)))
-    },
-    [loadSource]
-  )
-
-  // Load initial data
-  useEffect(() => {
-    loadColumnNews("focus")
-  }, [loadColumnNews])
-
-  // Refresh all sources in active column
-  const refreshAll = useCallback(async () => {
-    setError("")
-    await loadColumnNews(activeColumn)
-  }, [activeColumn, loadColumnNews])
-
-  // Handle column change
-  const handleColumnChange = (columnId: string) => {
-    setActiveColumn(columnId)
-    loadColumnNews(columnId)
-  }
-
-  const handleNewsItemClick = (url: string) => {
-    if (url && url !== "#") {
-      window.open(url, "_blank")
-    }
-  }
-
-  const isAnyLoading = Object.values(loading).some(Boolean)
 
   return (
-    <div className="w-[600px] h-[500px] bg-gray-100 flex flex-col overflow-hidden">
-      <Header
-        activeColumn={activeColumn}
-        isLoading={isAnyLoading}
-        onColumnChange={handleColumnChange}
-        onRefresh={refreshAll}
-      />
-
-      {error && <ErrorBanner message={error} />}
-
-      <ContentArea
-        activeColumn={activeColumn}
-        sourceData={sourceData}
-        loading={loading}
-        onRefresh={loadSource}
-        onItemClick={handleNewsItemClick}
-      />
-
-      <Footer />
+    <div style={{
+      width: "200px",
+      height: "100px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: "14px",
+      color: "#666"
+    }}>
+      正在打开窗口...
     </div>
   )
 }
 
-export default IndexPopup
+export default PopupTrigger
